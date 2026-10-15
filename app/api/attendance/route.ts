@@ -8,7 +8,7 @@ export async function POST(req:Request){
  const {event,code,attending,revision,device}=await req.json() as any;
  if(typeof event!=='string'||typeof code!=='string'||typeof attending!=='boolean'||!Number.isSafeInteger(revision)||revision<0)return json({error:'Datos no válidos'},400);
  if(!attending&&(await getSession())?.role!=='admin')return json({error:'Solo un administrador puede anular entradas.'},403);
- const person=await database.prepare('UPDATE people SET arrived=?,device=?,revision=revision+1 WHERE event=? AND code=? AND revision=? RETURNING *').bind(attending?new Date().toISOString():null,attending?String(device||'Registro manual').slice(0,60):null,event,code,revision).first();
+ const person=await database.prepare('UPDATE people SET arrived=?,device=?,revision=revision+1 WHERE event=? AND code=? AND revision=? AND (arrived IS NULL OR ?) RETURNING *').bind(attending?new Date().toISOString():null,attending?String(device||'Registro manual').slice(0,60):null,event,code,revision,(await getSession())?.role==='admin').first();
  if(person)return json({person});
  const existing=await database.prepare('SELECT code FROM people WHERE event=? AND code=?').bind(event,code).first();
  return json({error:existing?'Otra persona ha actualizado esta asistencia. Revisa su estado antes de volver a cambiarla.':'Persona no encontrada.'},existing?409:404);
