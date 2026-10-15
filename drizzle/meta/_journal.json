@@ -15,6 +15,13 @@
       "when": 1792058060762,
       "tag": "0001_open_moondragon",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792058591039,
+      "tag": "0002_little_otto_octavius",
+      "breakpoints": true
     }
   ]
 }
