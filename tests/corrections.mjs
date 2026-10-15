@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
-const base='http://127.0.0.1:5173';
-const login=await fetch(base+'/signin-with-chatgpt?return_to=/',{redirect:'manual'});const cookie=login.headers.getSetCookie().map(v=>v.split(';')[0]).join('; ');
+const base=process.env.TEST_BASE_URL||'http://127.0.0.1:3000';
+if(!['localhost','127.0.0.1'].includes(new URL(base).hostname))throw Error('Use a local test server');
+if(!process.env.TEST_ADMIN_PASSWORD)throw Error('Set TEST_ADMIN_PASSWORD');
+const login=await fetch(base+'/api/auth',{method:'POST',headers:{'content-type':'application/json',origin:base},body:JSON.stringify({role:'admin',password:process.env.TEST_ADMIN_PASSWORD})});assert.equal(login.status,200);const cookie=login.headers.getSetCookie().map(v=>v.split(';')[0]).join('; ');
 async function post(path,body,auth=true){const r=await fetch(base+path,{method:'POST',headers:{'content-type':'application/json',origin:base,...auth?{cookie}:{}},body:JSON.stringify(body)});return {status:r.status,data:await r.json()};}
 const made=await post('/api/event',{name:'Prueba correcciones',people:[{name:'Invitada de prueba',code:''},{name:'Persona con código',code:'35060'},{name:'Otro invitado',code:''}]});assert.equal(made.status,200);const event=made.data.id;
-const roster=await (await fetch(base+'/api/event?id='+event)).json();assert.equal(roster.people.length,3);const guest=roster.people.find(p=>p.name==='Invitada de prueba');assert.ok(guest.code.startsWith('guest:'));assert.equal(new Set(roster.people.map(p=>p.code)).size,3);
+const roster=await (await fetch(base+'/api/event?id='+event,{headers:{cookie}})).json();assert.equal(roster.people.length,3);const guest=roster.people.find(p=>p.name==='Invitada de prueba');assert.ok(guest.code.startsWith('guest:'));assert.equal(new Set(roster.people.map(p=>p.code)).size,3);
 const body={event,code:guest.code,revision:0,attending:true,device:'Manual QA'};
 assert.equal((await post('/api/attendance',body,false)).status,401);
 const together=await Promise.all([post('/api/attendance',body),post('/api/attendance',body)]);assert.equal(together.filter(r=>r.status===200).length,1);assert.equal(together.filter(r=>r.status===409).length,1);

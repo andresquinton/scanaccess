@@ -1,126 +1,83 @@
-# vinext-starter
+# ScanAccess
 
-A clean full-stack starter running on [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and Drizzle support.
+Control de acceso móvil para iPhone: Code 39/Code 128/EAN, registro manual de invitados, correcciones de asistencia y sincronización con Google Sheets. Aplicación Next.js para Vercel con PostgreSQL (Supabase) y una cuenta de servicio de Google.
 
-## Prerequisites
+## Desplegar en Vercel
 
-- Node.js `>=22.13.0`
-- Portable: Windows, macOS, or Linux; no Bash required
-- Managed Linux: managed Linux runtime with Bash, `flock`, `curl`, `sha256sum`, and GNU `timeout`
-- Git is required only for publishing
+1. Conectar este repositorio y seleccionar `main`.
+2. Root Directory: raíz del repositorio (`./`). Framework: **Next.js**. Node.js: **22.x**.
+3. La configuración versionada usa `npm ci`, `npm run build` y `.next`. No usar `dist` ni los antiguos comandos de Cloudflare/Vinext.
+4. Crear un proyecto Supabase y ejecutar `db/postgres/001_initial.sql` en SQL Editor. Alternativamente ejecutar `npm run db:migrate` con `DATABASE_URL` configurada en `.env.local`.
+5. Añadir las variables de `.env.example` a Vercel > Project > Settings > Environment Variables (Production; también Preview si se va a usar con datos separados). No subir secretos a GitHub.
+6. Hacer Redeploy después de guardar las variables. Abrir `/login`, entrar como administrador y activar la sincronización.
 
-## Sites Lifecycle
+El código se puede compilar sin credenciales. Hasta configurar los servicios, la pantalla de acceso mostrará lo que falta y no permitirá consultar asistentes.
 
-The Sites initializer copies the shared starter and selects managed-linux only when `SITES_MANAGED_LINUX_CONTAINER=1`; otherwise it selects portable. It saves the selection only in ignored `.sites-runtime/execution-profile.json`. Both profiles copy/configure first, then use the plugin's separate `install-dependencies.mjs` step to measure installation independently. Edit source under `app/` and follow the Sites skill for installation, preview, builds, and publishing.
+## Variables
 
-Run `node <plugin-root>/scripts/configure-execution-profile.mjs` only when the profile is unknown for the current checkout and environment. Profile changes do not alter tracked source or require reinstalling otherwise-valid dependencies; restart an existing preview to use the new selection. Do not commit or upload `.sites-runtime/`.
+| Nombre | Valor |
+| --- | --- |
+| `DATABASE_URL` | Cadena PostgreSQL de Supabase > Connect > Transaction pooler. Sustituir y codificar correctamente la contraseña. |
+| `DATABASE_CA_CERT` | Certificado CA PEM del proveedor si la cadena TLS requiere una CA específica. No se desactiva la validación TLS. |
+| `SESSION_SECRET` | Secreto aleatorio de al menos 32 caracteres; por ejemplo generado con `openssl rand -hex 32`. |
+| `OPERATOR_PASSWORD` | Contraseña de al menos 12 caracteres para el equipo de acceso. |
+| `ADMIN_PASSWORD` | Otra contraseña de al menos 12 caracteres para gestión y correcciones. |
+| `GOOGLE_CLIENT_EMAIL` | Email de la cuenta de servicio de Google Cloud. |
+| `GOOGLE_PRIVATE_KEY` | Campo `private_key` de la clave JSON de esa cuenta. Acepta saltos de línea reales o `\n`. |
+| `GOOGLE_SPREADSHEET_ID` | `1DV4dBOpA3dProCWhvjq_JbqRonr0_Nc_zkDoBLkHyeE` |
+| `GOOGLE_SHEET_NAME` | `Worksheet` |
+| `GOOGLE_SHEET_ID` | `1799967749` (ID numérico de la pestaña, no del documento). |
 
-This starter does not use `wrangler.jsonc`.
+Solo para una base de pruebas local sin TLS se admite `DATABASE_SSL=disable`. No configurarlo en Vercel.
 
-`install:ci` runs `npm ci` once against the shared lockfile, disables parent-workspace discovery, and includes required dev/optional dependencies despite production/omit settings. Sharp defaults to prebuilt binaries unless explicitly configured otherwise. Do not overlap installers.
+## Google Sheets
 
-- **Portable:** Preserve host HOME, npm cache, registry, proxy, temporary paths, retry/concurrency settings, and lifecycle-script policy. Use `--prefer-offline --no-audit --no-fund`.
-- **Managed Linux:** Use the existing project-local HOME/cache/tmp setup and Linux install lock, tarball preflight, and timeout. Restore the image-seeded npm cache only when its lockfile hash matches; retain network fallback. Builds keep their existing timeout. These helpers are not invoked by the portable profile.
+En Google Cloud, habilitar **Google Sheets API**, crear una cuenta de servicio y su clave JSON. Compartir únicamente el documento del evento con `GOOGLE_CLIENT_EMAIL` como **Editor**. No se necesita delegación de todo el dominio. Guardar la clave solo como variable del servidor.
 
-`scripts/sites-env.mjs` preserves the caller's HOME, npm cache, proxy, XDG, and temporary-directory configuration while defaulting Wrangler and Miniflare state to the checkout. If npm reports an unwritable cache, select a writable path with `npm_config_cache` for that install. The `dev` and `start` scripts also keep Wrangler logs inside the checkout. Generated `.sites-runtime/` and `.wrangler/` directories are disposable and ignored by Git.
+Conservar las columnas de la pestaña:
 
-On portable, `npm run dev` uses `vinext dev` with HMR, starting at port 5173. Vinext records the running server in ignored `.vinext/` state, rejects an ordinary duplicate launch, and recovers stale state after a stopped process; exactly simultaneous starts can race. Pass `--port <port>` or `--hostname <host>` after `npm run dev --` when needed; keep portable previews on loopback.
+| A | B | C | D | E | F |
+| --- | --- | --- | --- | --- | --- |
+| nombre | cod | Asistencia | Hora de entrada (UTC) | Puesto | ID invitado |
 
-For browser QA on managed Linux, use `sites-preview start`. The project's dev script runs Vite and accepts the supervisor's `--host 0.0.0.0 --port 4173 --strictPort` arguments. The internal browser uses `http://terminal.local:4173/`; it is not a user-facing URL. The supervisor owns the preview lifecycle. The ignored local profile survives the supervisor's cleared process environment.
+`cod` puede estar vacío para invitados. La app asigna un ID estable en F durante la sincronización; conservarlo al ordenar o renombrar invitados. Se leen como máximo 10.000 filas. `S35060E` en una acreditación Code 39 se relaciona con el código `35060`.
 
-The portable profile simulates ChatGPT sign-in only for loopback development requests. Visit `/signin-with-chatgpt?return_to=/` to sign in as `local_seedy` (`seedy@sites.test`, display name `Seedy`) and `/signout-with-chatgpt?return_to=/` to sign out. The development cookie preserves that identity across server restarts. Mock auth is disabled in the managed-linux profile and is not included in production builds; hosted authentication remains dispatch-owned.
+La asistencia se confirma cuando se guarda en PostgreSQL. Mientras una sesión mantiene la sincronización activada, la app envía los cambios a Sheets cada 15 segundos. Las correcciones también se envían. Si Google falla, el registro sigue guardado y se muestra el error; reactivar la sincronización revisa el estado de la hoja antes de reintentar. Antes de cerrar el último móvil, pulsar Actualizar y comprobar que no quedan cambios pendientes. No hay un proceso de sincronización autónomo cuando todos los móviles están cerrados.
 
-The Worker uses `vinext/server/fetch-handler`, including Vinext's config-aware image handling. After building, `npm start` runs that Worker locally through Wrangler on `127.0.0.1`, sharing `.wrangler/state` with dev preview and local D1 migrations; it does not deploy the site or simulate sign-in. Use the URL printed by the server. Pass `npm start -- --port <port>` to select a different built-preview port.
+Los nombres y códigos se editan en Sheets; la asistencia se gestiona en la app. Una corrección realizada en la app tiene prioridad sobre un valor antiguo de la hoja. Evitar reordenar filas mientras se está enviando un lote de cambios.
 
-Local previews use Miniflare's placeholder `Request.cf` metadata without a network lookup. Set `CLOUDFLARE_CF_FETCH_ENABLED=true` to opt into fetching preview metadata; this setting does not change hosted request metadata.
+## Acceso y permisos
 
-Local tool usage metrics are disabled by default. Set `WRANGLER_SEND_METRICS=true` to opt in.
+- **Operador:** consultar el evento, escanear, registrar manualmente y sincronizar Sheets.
+- **Administrador:** lo anterior más importar eventos y anular asistencias.
+- Sesiones de 12 horas en cookies HttpOnly/Secure/SameSite. Cambiar contraseñas o SESSION_SECRET invalida sesiones existentes.
+- Las rutas API validan sesión y origen. PostgreSQL tiene RLS activado; las credenciales de base de datos nunca se entregan al navegador.
+- Cada móvil puede poner su nombre de puesto, por ejemplo «Entrada 1».
 
-## Included Shape
+## Datos de la versión anterior
 
-- edit site code under `app/`
-- `app/chatgpt-auth.ts` provides optional dispatch-owned ChatGPT sign-in helpers
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/index.ts` reads the D1 binding from the Cloudflare Worker environment
-- `db/schema.ts` starts intentionally empty
-- `@cloudflare/workers-types` provides Worker types; `cloudflare-env.d.ts` declares optional `DB`/`BUCKET` bindings—update these declarations if binding names change
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+La versión Sites publicada conserva su base de datos. Cambiar el alojamiento no mueve automáticamente esa base a Supabase. La nueva app reconstruye el evento principal a partir de la hoja y conserva las asistencias ya sincronizadas.
 
-## Workspace Auth Headers
+Antes de pasar todos los móviles a Vercel, finalizar la sincronización en la versión anterior. No usar ambos sistemas para registrar el mismo evento simultáneamente. Los eventos importados por Excel que solo existan en la base anterior necesitan una transferencia aparte; no se eliminan de Sites.
 
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
-
-The user ID is stable for the same user on the same Site and different across Sites. Use it as the durable user key; use email and name for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive `oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty `name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by `oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
-```
-
-## Optional Dispatch-Owned ChatGPT Sign-In
-
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs optional or required ChatGPT sign-in:
-
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use the returned `userId` as the stable user key for user-owned records; do not use email as a durable identifier.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send anonymous visitors through Sign in with ChatGPT.
-- In a Server Component, start sign-in with `<a href={chatGPTSignInPath(returnTo)} target="_top">`. The auth helper module is server-only; do not import it into a Client Component.
-- Do not use `fetch`, XHR, a client-side router, or a framework link that can prefetch the sign-in route. SIWC must start as a top-level navigation.
-- Never request the AuthAPI authorization endpoint directly. The dispatch-owned `/signin-with-chatgpt` route must start the SIWC flow.
-- Use `chatGPTSignOutPath(returnTo)` for browser sign-out links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the OAuth cookies, and identity header injection. Do not implement app routes for those reserved paths. Routes that do not import and call the helper remain anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the Sites hosting platform's access policy controls for workspace-wide restrictions, or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Local D1 migrations
-
-For a D1-backed local preview, generate SQL with `npm run db:generate`. Build once through the Sites skill's build entrypoint (or `npm run build` for standalone use) to generate `dist/server/wrangler.json`, rebuilding if bindings change. From the project root, apply each pending migration in order:
+## Desarrollo y pruebas
 
 ```sh
-node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_example.sql
+npm ci
+cp .env.example .env.local
+# Completar las variables en el archivo local, que está ignorado por Git.
+npm run db:migrate
+npm run dev
 ```
 
-Replace the filename with the pending migration and `DB` with your D1 binding name if different. Use `.wrangler/state`, not `.wrangler/state/v3`; Wrangler adds the versioned directories. Do not replay migrations already applied locally. This updates only the preview database; publishing applies production migrations separately.
+```sh
+npm test
+npm run typecheck
+npm run build
+```
 
-## Diagnostic Commands
+`npm test` usa PostgreSQL embebido (PGlite) sin tocar Google Sheets ni datos de producción. Comprueba concurrencia, anulaciones, IDs de invitados, bloqueo de sincronización, RLS y firma de sesiones. Las pruebas HTTP `tests/integration.mjs` y `tests/corrections.mjs` requieren un servidor local, una base de pruebas y `TEST_ADMIN_PASSWORD`; no aceptan una URL de producción.
 
-- `npm run install:ci`: perform the one locked dependency install
-- `npm run dev`: start the Vite/Vinext development server
-- `npm run build`: build the deployable Sites artifact
-- `npm run start`: preview the built Worker locally with D1/R2 support
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+## Verificación antes del evento
 
-When using the Sites plugin, follow its skill instructions for installation, builds, and publishing. These npm commands remain available for standalone use.
-
-The portable build runs Vinext directly without a host `timeout` command. The managed-linux build uses `scripts/build-verified.sh` and its existing `SITES_BUILD_TIMEOUT` setting.
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+Probar en dos iPhone: entrada por cámara, mismo código simultáneo, invitado sin código, anulación por administrador, reentrada y confirmación de cada cambio en Google Sheets. Probar también la pérdida de conexión. Las compilaciones y pruebas de base de datos no sustituyen la prueba de cámara real.

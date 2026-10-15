@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY,name TEXT NOT NULL,created TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS people(event TEXT NOT NULL REFERENCES events(id),code TEXT NOT NULL,name TEXT NOT NULL,arrived TEXT,device TEXT,revision INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(event,code));
+CREATE INDEX IF NOT EXISTS people_event_arrived_idx ON people(event,arrived);
+CREATE TABLE IF NOT EXISTS sheet_sync(code TEXT PRIMARY KEY,synced TEXT);
+CREATE TABLE IF NOT EXISTS login_attempts(key TEXT PRIMARY KEY,attempts INTEGER NOT NULL,expires_at TIMESTAMPTZ NOT NULL);
+ALTER TABLE events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE people ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sheet_sync ENABLE ROW LEVEL SECURITY;
+ALTER TABLE login_attempts ENABLE ROW LEVEL SECURITY;
+-- The app uses a server-only PostgreSQL connection. No anonymous browser policies.
